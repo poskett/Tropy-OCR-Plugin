@@ -1,0 +1,162 @@
+{
+  "name": "tropy-ocr",
+  "productName": "OCR Transcription",
+  "version": "0.2.10",
+  "description": "Transcribe items or photos with a local Ollama vision model or Tesseract, writing Tropy notes while Tropy stays open. Bundled program for Apple Silicon Macs.",
+  "main": "index.js",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/poskett/Tropy-OCR-Plugin",
+  "license": "MIT",
+  "hooks": {},
+  "options": [
+    {
+      "field": "python",
+      "label": "Python executable",
+      "type": "string",
+      "default": "",
+      "hint": "Leave empty to use the bundled program (bin/tropy_ocr). Set only to use your own Python, e.g. /opt/homebrew/bin/python3"
+    },
+    {
+      "field": "script",
+      "label": "Path to tropy_ocr.py",
+      "type": "string",
+      "default": "",
+      "hint": "Leave empty to use the bundled program, or the tropy_ocr.py next to this plugin when a Python is set"
+    },
+    {
+      "field": "apiUrl",
+      "label": "Tropy API URL",
+      "type": "string",
+      "default": "http://localhost:2019",
+      "hint": "Tropy preferences > API must be switched on"
+    },
+    {
+      "field": "engine",
+      "label": "Engine (vision or tesseract)",
+      "type": "string",
+      "default": "vision"
+    },
+    {
+      "field": "model",
+      "label": "Ollama model",
+      "type": "string",
+      "default": "qwen3-vl:8b-instruct-q4_K_M"
+    },
+    {
+      "field": "ollamaHost",
+      "label": "Ollama host",
+      "type": "string",
+      "default": "http://localhost:11434"
+    },
+    {
+      "field": "tesseractCmd",
+      "label": "Tesseract program path (optional)",
+      "type": "string",
+      "default": "",
+      "hint": "Found automatically in /opt/homebrew/bin or /usr/local/bin"
+    },
+    {
+      "field": "tesseractLang",
+      "label": "Tesseract language",
+      "type": "string",
+      "default": "eng"
+    },
+    {
+      "field": "mode",
+      "label": "Mode (auto, printed, handwritten)",
+      "type": "string",
+      "default": "auto"
+    },
+    {
+      "field": "tag",
+      "label": "Tag for processed items",
+      "type": "string",
+      "default": "ocr:auto"
+    },
+    {
+      "field": "tagColor",
+      "label": "Tag colour (e.g. #ff8c19)",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "field": "noTag",
+      "label": "Do not tag processed items",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "field": "overwrite",
+      "label": "Replace earlier automated OCR notes",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "field": "dryRun",
+      "label": "Dry run (show results, write nothing)",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "field": "maxDimension",
+      "label": "Longest image edge (pixels)",
+      "type": "number",
+      "default": 2000
+    },
+    {
+      "field": "language",
+      "label": "Note language code",
+      "type": "string",
+      "default": "en"
+    },
+    {
+      "field": "retries",
+      "label": "Retries per photo",
+      "type": "number",
+      "default": 2
+    },
+    {
+      "field": "timeout",
+      "label": "Timeout per request (seconds)",
+      "type": "number",
+      "default": 120
+    },
+    {
+      "field": "maxTokens",
+      "label": "Max tokens per photo",
+      "type": "number",
+      "default": 4096
+    },
+    {
+      "field": "maxThinkTokens",
+      "label": "Max thinking tokens (0 disables)",
+      "type": "number",
+      "default": 1000
+    },
+    {
+      "field": "numCtx",
+      "label": "Context window (num_ctx)",
+      "type": "number",
+      "default": 8192
+    },
+    {
+      "field": "repeatPenalty",
+      "label": "Repeat penalty",
+      "type": "number",
+      "default": 1.3
+    },
+    {
+      "field": "logFile",
+      "label": "Log file (JSONL, optional)",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "field": "openProgress",
+      "label": "Open live progress page in browser",
+      "type": "boolean",
+      "default": true
+    }
+  ],
+  "source": "local"
+}
