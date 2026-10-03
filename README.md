@@ -1,5 +1,5 @@
 # OCR Transcription for Tropy (version 0.4.0)
-Adds a **Start OCR** button to Tropy. Select items, press the button, and each photo is transcribed by a model running on locally on your own Mac. The text is saved as a Tropy note on the photo, and the item is tagged `ocr:auto`.
+Adds a **Start OCR** button to [Tropy](https://tropy.org/). Select items, press the button, and each photo is transcribed by a model running on locally on your own Mac. The text is saved as a Tropy note on the photo, and the item is tagged `ocr:auto`.
 
 **Requirements:** a Mac with an Apple Silicon chip (M1, M2, M3 or later; not an Intel Mac), and Tropy 1.17. A Mac with 16 GB of memory or more is recommended for the default model.
 
@@ -22,7 +22,7 @@ endorsed by the Tropy project.
 ## Installation: follow these steps in order
 
 ### Step 1. Install Ollama (runs the AI model)
-1. Go to https://ollama.com/download and download Ollama for macOS.
+1. Go to [https://ollama.com/download](https://ollama.com/download)  and download Ollama for macOS.
 2. Open the downloaded file and drag Ollama into your Applications folder.
 3. Open Ollama from Applications. A small llama icon appears at the top of your screen (menu bar). **Ollama must be running whenever you use the plugin.**
 
@@ -36,7 +36,7 @@ endorsed by the Tropy project.
 4. You can close Terminal.
 
 ### Step 3. Install the plugin in Tropy
-1. Download `tropy-ocr-0.4.0.zip` from Release on this page.
+1. Download `tropy-ocr-0.4.0.zip` from [Release](https://github.com/poskett/Tropy-OCR-Plugin/releases/) on this page.
 2. Open Tropy.
 3. In the menu bar choose **Tropy > Settings > Plugins**
 4. Click "Install Plugin".
