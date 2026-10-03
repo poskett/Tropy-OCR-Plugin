@@ -36,7 +36,7 @@ endorsed by the Tropy project. It is released **as is and without warranty**.
 4. You can close Terminal.
 
 ### Step 3. Install the plugin in Tropy
-1. Download `tropy-ocr-0.2.10.zip` from Release on this page.
+1. Download [`tropy-ocr-0.2.10.zip`](https://github.com/poskett/Tropy-OCR-Plugin/releases/tag/v0.2.10) from Release on this page.
 2. Open Tropy.
 3. In the menu bar choose **Tropy > Settings > Plugins**
 4. Click "Install Plugin".
