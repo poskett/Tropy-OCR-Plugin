@@ -8,7 +8,7 @@ The code for this project was generated using Claude Code (Sonnet 5.5). This rea
 
 ## Disclaimer
 This plugin is an independent, unofficial tool. It is not affiliated with or
-endorsed by the Tropy project. It is released **as is and without *warranty**.
+endorsed by the Tropy project. It is released **as is and without warranty**.
 
 ## Benefits
 
