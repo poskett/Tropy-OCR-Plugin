@@ -1,4 +1,4 @@
-# OCR Transcription for Tropy (version 0.3.1)
+# OCR Transcription for Tropy (version 0.4.0)
 Adds a **Start OCR** button to Tropy. Select items, press the button, and each photo is transcribed by a model running on locally on your own Mac. The text is saved as a Tropy note on the photo, and the item is tagged `ocr:auto`.
 
 **Requirements:** a Mac with an Apple Silicon chip (M1, M2, M3 or later; not an Intel Mac), and Tropy 1.17. A Mac with 16 GB of memory or more is recommended for the default model.
@@ -36,11 +36,11 @@ endorsed by the Tropy project. It is released **as is and without *warranty**.
 4. You can close Terminal.
 
 ### Step 3. Install the plugin in Tropy
-1. Download `tropy-ocr-0.3.1.zip` from Release on this page.
+1. Download `tropy-ocr-0.4.0.zip` from Release on this page.
 2. Open Tropy.
 3. In the menu bar choose **Tropy > Settings > Plugins**
 4. Click "Install Plugin".
-5. Select `tropy-ocr-0.3.1.zip` and click 'Open'.
+5. Select `tropy-ocr-0.4.0.zip` and click 'Open'.
 6. The plugin 'OCR Transcription' should now appear.
 
 ### Step 4. Turn the plugin on
@@ -106,7 +106,7 @@ You do not need Ollama or the model if you only use Tesseract.
 Tropy > Settings > Plugins > OCR Transcription > **Uninstall**. This does not remove notes already created. To remove Ollama, delete it from Applications.
 
 ## For developers
-- The script is shared with the standalone tool: after editing `tropy_ocr.py` here, copy it over `../tropy-ocr/tropy_ocr.py` and run the tests there (`cd ../tropy-ocr && .venv/bin/python -m unittest discover -s tests`).
-- `tropy_ocr.py` is the source of the bundled program `bin/tropy_ocr`; rebuild with `./build_bundle.sh` (needs `../.venv` with the packages in the script's imports).
-- Command line use: `bin/tropy_ocr --api-url http://localhost:2019 --item 12 --preview`. The original `--project` mode (Tropy closed) still works.
+- `tropy_ocr_plugin.py` is a separate, API-only version of the standalone `../tropy-ocr/tropy_ocr.py` (no `--project` mode, no tag colour). Changes are not shared between them automatically.
+- `tropy_ocr_plugin.py` is the source of the bundled program `bin/tropy_ocr`; rebuild with `./build_bundle.sh` (needs `../.venv` with the packages in the script's imports).
+- Command line use: `bin/tropy_ocr --api-url http://localhost:2019 --item 12 --preview`.
 - To use your own Python instead of the bundled program, set "Python executable" in the settings.

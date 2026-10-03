@@ -155,7 +155,7 @@ class OcrPlugin {
     const o = this.options
     const bundled = path.join(__dirname, 'bin', 'tropy_ocr')
     if (!o.script && !o.python && fs.existsSync(bundled)) return { command: bundled, args: [] }
-    const script = o.script || path.join(__dirname, 'tropy_ocr.py')
+    const script = o.script || path.join(__dirname, 'tropy_ocr_plugin.py')
     return { command: o.python || 'python3', args: [script] }
   }
 
@@ -175,7 +175,6 @@ class OcrPlugin {
     args.push('--max-tokens', String(o.maxTokens), '--max-think-tokens', String(o.maxThinkTokens))
     args.push('--num-ctx', String(o.numCtx), '--repeat-penalty', String(o.repeatPenalty))
     args.push('--tag', o.tag)
-    if (o.tagColor) args.push('--tag-color', o.tagColor)
     if (o.noTag) args.push('--no-tag')
     if (o.overwrite) args.push('--overwrite')
     if (o.dryRun) args.push('--dry-run')

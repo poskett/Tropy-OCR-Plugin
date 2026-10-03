@@ -1,7 +1,7 @@
 {
   "name": "tropy-ocr",
   "productName": "OCR Transcription",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Transcribe items or photos with a local Ollama vision model or Tesseract, writing Tropy notes while Tropy stays open. Bundled program for Apple Silicon Macs.",
   "main": "index.js",
   "icon": "icon.svg",
@@ -18,10 +18,10 @@
     },
     {
       "field": "script",
-      "label": "Path to tropy_ocr.py",
+      "label": "Path to tropy_ocr_plugin.py",
       "type": "string",
       "default": "",
-      "hint": "Leave empty to use the bundled program, or the tropy_ocr.py next to this plugin when a Python is set"
+      "hint": "Leave empty to use the bundled program, or the tropy_ocr_plugin.py next to this plugin when a Python is set"
     },
     {
       "field": "apiUrl",
@@ -72,12 +72,6 @@
       "label": "Tag for processed items",
       "type": "string",
       "default": "ocr:auto"
-    },
-    {
-      "field": "tagColor",
-      "label": "Tag colour (e.g. #ff8c19)",
-      "type": "string",
-      "default": ""
     },
     {
       "field": "noTag",
