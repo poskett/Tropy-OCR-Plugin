@@ -104,9 +104,3 @@ You do not need Ollama or the model if you only use Tesseract.
 
 ## Uninstalling
 Tropy > Settings > Plugins > OCR Transcription > **Uninstall**. This does not remove notes already created. To remove Ollama, delete it from Applications.
-
-## For developers
-- `tropy_ocr_plugin.py` is a separate, API-only version of the standalone `../tropy-ocr/tropy_ocr.py` (no `--project` mode, no tag colour). Changes are not shared between them automatically.
-- `tropy_ocr_plugin.py` is the source of the bundled program `bin/tropy_ocr`; rebuild with `./build_bundle.sh` (needs `../.venv` with the packages in the script's imports).
-- Command line use: `bin/tropy_ocr --api-url http://localhost:2019 --item 12 --preview`.
-- To use your own Python instead of the bundled program, set "Python executable" in the settings.
