@@ -1,7 +1,7 @@
 {
   "name": "tropy-ocr",
   "productName": "OCR Transcription",
-  "version": "0.2.10",
+  "version": "0.3.1",
   "description": "Transcribe items or photos with a local Ollama vision model or Tesseract, writing Tropy notes while Tropy stays open. Bundled program for Apple Silicon Macs.",
   "main": "index.js",
   "icon": "icon.svg",

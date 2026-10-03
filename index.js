@@ -258,6 +258,8 @@ class OcrPlugin {
       summary.stopped = event.stopped
       summary.message = event.message || ''
       summary.tagErrors = event.tag_errors || 0
+      summary.repeated = event.repeated || 0
+      summary.repeatedIds = event.repeated_ids || []
     }
   }
 
@@ -278,6 +280,7 @@ class OcrPlugin {
     }
     let text = `OCR finished${summary.stopped ? ' (stopped early)' : ''}.\n\nTranscribed: ${summary.ok}\nFailed: ${summary.failed}\nSkipped: ${summary.skipped}`
     if (summary.failedIds.length) text += `\n\nFailed photo ids: ${summary.failedIds.join(', ')}`
+    if (summary.repeated) text += `\n\nThe model began repeating itself on ${summary.repeated} photo(s); the text was cut short and flagged in the note. Please check photo id(s): ${summary.repeatedIds.join(', ')}.`
     if (summary.tagErrors) text += `\n\n${summary.tagErrors} item(s) could not be tagged "${this.options.tag}" (the notes were saved).`
     else if (!this.options.dryRun && !this.options.noTag) text += '\n\nNew notes appear on each photo and the items are tagged.'
     else if (!this.options.dryRun) text += '\n\nNew notes appear on each photo.'

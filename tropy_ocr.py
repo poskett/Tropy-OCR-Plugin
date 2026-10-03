@@ -74,6 +74,48 @@ class ThinkingLimitError(RuntimeError):
     pass
 
 
+class RepetitionLoop(RuntimeError):
+    def __init__(self, text):
+        super().__init__("the model began repeating itself")
+        self.text = text
+
+
+REPEAT_NOTICE = (
+    "[OCR stopped: the model began repeating itself, so the rest of this page "
+    "may be missing - please check this page]"
+)
+
+
+def find_repetition_cut(text):
+    length = len(text)
+    if length < 400:
+        return None
+    probe = text[-min(120, length // 4):]
+    positions = []
+    start = 0
+    while True:
+        index = text.find(probe, start)
+        if index == -1:
+            break
+        positions.append(index)
+        start = index + 1
+    if len(positions) < 2:
+        return None
+    period = positions[-1] - positions[-2]
+    if period <= 0:
+        return None
+    matched = 0
+    position = length - 1
+    while position - period >= 0 and text[position] == text[position - period]:
+        matched += 1
+        position -= 1
+    needed = 2 * period if period >= 150 else 800
+    if matched < needed:
+        return None
+    region_start = length - matched - period
+    return region_start + period
+
+
 def build_arg_parser():
     parser = argparse.ArgumentParser(
         description=(
@@ -480,13 +522,17 @@ def build_selection(conn, args):
     where = " AND ".join(clauses)
     sql = (
         "SELECT photos.id AS photo_id, photos.item_id AS item_id, "
-        "photos.path AS path, photos.filename AS filename "
+        "photos.path AS path, photos.filename AS filename, "
+        "photos.mimetype AS mimetype, photos.page AS page "
         "FROM photos "
         f"WHERE {where} "
         "ORDER BY photos.item_id, photos.position"
     )
     rows = conn.execute(sql, params).fetchall()
-    return [dict(row) for row in rows]
+    photos = [dict(row) for row in rows]
+    for photo in photos:
+        photo["label"] = photo_label(photo)
+    return photos
 
 
 def report_excluded_explicit_ids(args, photos):
@@ -513,17 +559,112 @@ def apply_limit(photos, args):
     return photos
 
 
-def load_image(project_dir, relative_path, max_dimension):
+DOCUMENT_HOLD = {"key": None, "kind": None, "document": None}
+
+
+def release_document():
+    document = DOCUMENT_HOLD["document"]
+    DOCUMENT_HOLD.update(key=None, kind=None, document=None)
+    if document is not None:
+        try:
+            document.close()
+        except Exception:
+            pass
+
+
+def is_pdf(mimetype, name):
+    return mimetype == "application/pdf" or str(name or "").lower().endswith(".pdf")
+
+
+def is_tiff(mimetype, name):
+    return mimetype == "image/tiff" or str(name or "").lower().endswith((".tif", ".tiff"))
+
+
+def is_multipage(photo):
+    name = photo.get("filename") or photo.get("path")
+    return is_pdf(photo.get("mimetype"), name) or is_tiff(photo.get("mimetype"), name) or bool(photo.get("page"))
+
+
+def photo_label(photo):
+    name = photo.get("filename") or ""
+    if is_multipage(photo):
+        return f"{name} p.{int(photo.get('page') or 0) + 1}"
+    return name
+
+
+def fit_to_max_dimension(image, max_dimension):
+    width, height = image.size
+    longest = max(width, height)
+    if longest > max_dimension:
+        scale = max_dimension / float(longest)
+        new_size = (max(1, round(width * scale)), max(1, round(height * scale)))
+        image = image.resize(new_size, Image.Resampling.LANCZOS)
+    return image
+
+
+def hold_document(key, kind, opener):
+    if DOCUMENT_HOLD["key"] == key and DOCUMENT_HOLD["kind"] == kind:
+        return DOCUMENT_HOLD["document"]
+    release_document()
+    document = opener()
+    DOCUMENT_HOLD.update(key=key, kind=kind, document=document)
+    return document
+
+
+def open_pdf(source):
+    try:
+        import pypdfium2
+    except ImportError:
+        raise RuntimeError("PDF support needs the pypdfium2 package (pip install pypdfium2)")
+    if isinstance(source, Path) and not source.is_file():
+        raise RuntimeError(f"the file {source.name} is missing from the project folder")
+    try:
+        return pypdfium2.PdfDocument(source)
+    except Exception as error:
+        text = str(error)
+        if "password" in text.lower():
+            raise RuntimeError("the PDF is password-protected")
+        raise RuntimeError(f"could not open the PDF ({text})")
+
+
+def render_pdf_page(document, page, max_dimension):
+    total = len(document)
+    if page < 0 or page >= total:
+        raise RuntimeError(f"the PDF has {total} page(s) but page {page + 1} was requested")
+    pdf_page = document[page]
+    try:
+        width, height = pdf_page.get_size()
+        scale = max_dimension / float(max(width, height))
+        return pdf_page.render(scale=scale).to_pil().convert("RGB")
+    finally:
+        pdf_page.close()
+
+
+def load_page_image(key, get_source, mimetype, name, page, max_dimension):
+    page = int(page or 0)
+    if is_pdf(mimetype, name):
+        document = hold_document(key, "pdf", lambda: open_pdf(get_source()))
+        return fit_to_max_dimension(render_pdf_page(document, page, max_dimension), max_dimension)
+    if is_tiff(mimetype, name) or page > 0:
+        def open_image():
+            source = get_source()
+            return Image.open(io.BytesIO(source) if isinstance(source, bytes) else source)
+
+        document = hold_document(key, "image", open_image)
+        frames = getattr(document, "n_frames", 1)
+        if page >= frames:
+            raise RuntimeError(f"the file has {frames} page(s) but page {page + 1} was requested")
+        document.seek(page)
+        return fit_to_max_dimension(document.convert("RGB"), max_dimension)
+    release_document()
+    source = get_source()
+    with Image.open(io.BytesIO(source) if isinstance(source, bytes) else source) as image:
+        return fit_to_max_dimension(image.convert("RGB"), max_dimension).copy()
+
+
+def load_image(project_dir, relative_path, max_dimension, mimetype=None, page=0):
     full_path = project_dir / relative_path
-    with Image.open(full_path) as image:
-        image = image.convert("RGB")
-        width, height = image.size
-        longest = max(width, height)
-        if longest > max_dimension:
-            scale = max_dimension / float(longest)
-            new_size = (max(1, round(width * scale)), max(1, round(height * scale)))
-            image = image.resize(new_size, Image.Resampling.LANCZOS)
-        return image.copy()
+    return load_page_image(str(full_path), lambda: full_path, mimetype, full_path.name, page, max_dimension)
 
 
 def image_to_b64(image):
@@ -621,6 +762,7 @@ def call_ollama(host, model, prompt, image_b64, timeout, retries, max_tokens, nu
             response.raise_for_status()
             parts = []
             thinking_chunks = 0
+            since_check = 0
             for line in response.iter_lines():
                 if not line:
                     continue
@@ -629,6 +771,14 @@ def call_ollama(host, model, prompt, image_b64, timeout, retries, max_tokens, nu
                     raise RuntimeError(chunk["error"])
                 if chunk.get("response"):
                     parts.append(chunk["response"])
+                    since_check += len(chunk["response"])
+                    if since_check >= 200:
+                        since_check = 0
+                        so_far = "".join(parts)
+                        cut = find_repetition_cut(so_far)
+                        if cut:
+                            response.close()
+                            raise RepetitionLoop(so_far[:cut].strip())
                 if chunk.get("thinking"):
                     thinking_chunks += 1
                     if max_think_tokens and not parts and thinking_chunks > max_think_tokens:
@@ -640,7 +790,7 @@ def call_ollama(host, model, prompt, image_b64, timeout, retries, max_tokens, nu
                 if chunk.get("done"):
                     break
             return "".join(parts).strip()
-        except ThinkingLimitError:
+        except (ThinkingLimitError, RepetitionLoop):
             raise
         except requests.HTTPError as error:
             server_detail = ""
@@ -656,6 +806,25 @@ def call_ollama(host, model, prompt, image_b64, timeout, retries, max_tokens, nu
             if attempt < retries:
                 time.sleep(2 ** attempt)
     raise RuntimeError(f"Ollama request failed after {retries + 1} attempts: {last_error}")
+
+
+def transcribe_with_vision(args, image, prompt):
+    try:
+        raw_text = call_ollama(
+            args.ollama_host,
+            args.model,
+            prompt,
+            image_to_b64(image),
+            args.timeout,
+            args.retries,
+            args.max_tokens,
+            args.num_ctx,
+            args.repeat_penalty,
+            args.max_think_tokens,
+        )
+        return raw_text, False
+    except RepetitionLoop as loop:
+        return loop.text, True
 
 
 def clean_ocr_text(raw_text):
@@ -757,30 +926,23 @@ def process_photo(conn, project_dir, photo, args, tag_id):
                 "elapsed": time.time() - start,
             }
     try:
-        image = load_image(project_dir, photo["path"], args.max_dimension)
+        image = load_image(
+            project_dir, photo["path"], args.max_dimension, photo.get("mimetype"), photo.get("page")
+        )
+        repeated = False
         if args.engine == "tesseract":
             raw_text = call_tesseract(image, args.tesseract_lang, args.timeout)
             engine_label = f"tesseract {args.tesseract_version}:{args.tesseract_lang}"
         else:
-            image_b64 = image_to_b64(image)
-            prompt = PROMPTS[args.mode]
-            raw_text = call_ollama(
-                args.ollama_host,
-                args.model,
-                prompt,
-                image_b64,
-                args.timeout,
-                args.retries,
-                args.max_tokens,
-                args.num_ctx,
-                args.repeat_penalty,
-                args.max_think_tokens,
-            )
+            raw_text, repeated = transcribe_with_vision(args, image, PROMPTS[args.mode])
             engine_label = args.model
         ocr_text = clean_ocr_text(raw_text)
         no_text = not ocr_text or is_no_text_response(ocr_text)
         if no_text:
             ocr_text = "[no text identified]"
+        if repeated:
+            no_text = False
+            ocr_text = REPEAT_NOTICE if ocr_text == "[no text identified]" else f"{ocr_text}\n\n{REPEAT_NOTICE}"
         final_text = finalize_note_text(ocr_text, engine_label)
         plain_text = build_note_plain_text(final_text)
         state = build_note_state(final_text)
@@ -808,6 +970,7 @@ def process_photo(conn, project_dir, photo, args, tag_id):
             "status": "dry-run",
             "chars": len(ocr_text),
             "no_text": no_text,
+            "repetition": repeated,
             "elapsed": time.time() - start,
             "text": ocr_text,
         }
@@ -836,6 +999,7 @@ def process_photo(conn, project_dir, photo, args, tag_id):
         "status": "ok",
         "chars": len(ocr_text),
         "no_text": no_text,
+        "repetition": repeated,
         "elapsed": time.time() - start,
     }
     if not args.no_tag and tag_id is not None:
@@ -866,6 +1030,7 @@ STATUS = {
     "label": "",
     "message": "",
     "tag_errors": 0,
+    "repetitions": 0,
     "updated": time.time(),
     "finished_at": None,
 }
@@ -933,7 +1098,7 @@ async function refresh() {
   const bar = document.getElementById('bar');
   bar.max = Math.max(s.total, 1);
   bar.value = s.done;
-  setText('counts', s.done + ' of ' + s.total + ' photos - ok ' + s.ok + ', failed ' + s.failed + ', skipped ' + s.skipped + (s.tag_errors ? ' - items not tagged ' + s.tag_errors : ''));
+  setText('counts', s.done + ' of ' + s.total + ' photos - ok ' + s.ok + ', failed ' + s.failed + ', skipped ' + s.skipped + (s.tag_errors ? ' - items not tagged ' + s.tag_errors : '') + (s.repetitions ? ' - cut short by repetition ' + s.repetitions : ''));
   let times = 'Elapsed ' + fmt(s.elapsed);
   if (!done && s.remaining !== null) times += ' - about ' + fmt(s.remaining) + ' left';
   setText('times', times);
@@ -1254,28 +1419,47 @@ def api_build_selection(args):
                 TAG_STATE["done_items"].add(item_id)
             if marker_notes and not args.overwrite:
                 continue
-            photos.append(
-                {
-                    "photo_id": photo_id,
-                    "item_id": item_id,
-                    "filename": filename,
-                    "old_note_ids": marker_notes,
-                }
-            )
+            details = {
+                "mimetype": entry.get("mimetype"),
+                "page": entry.get("page"),
+                "path": entry.get("path"),
+                "filename": filename,
+            }
+            if is_multipage(details) and details["page"] is None:
+                try:
+                    details["page"] = api_request(args, "GET", f"/photos/{photo_id}").json().get("page")
+                except (requests.RequestException, ValueError, AttributeError):
+                    pass
+            photo = {
+                "photo_id": photo_id,
+                "item_id": item_id,
+                "filename": filename,
+                "mimetype": details["mimetype"],
+                "page": details["page"] if details["page"] is not None else 0,
+                "page_unknown": is_multipage(details) and details["page"] is None,
+                "source_path": entry.get("path"),
+                "old_note_ids": marker_notes,
+            }
+            photo["label"] = photo_label(photo)
+            photos.append(photo)
     return photos
 
 
-def api_load_image(args, photo_id):
-    response = api_request(args, "GET", f"/photos/{photo_id}/raw")
-    with Image.open(io.BytesIO(response.content)) as image:
-        image = image.convert("RGB")
-        width, height = image.size
-        longest = max(width, height)
-        if longest > args.max_dimension:
-            scale = args.max_dimension / float(longest)
-            new_size = (max(1, round(width * scale)), max(1, round(height * scale)))
-            image = image.resize(new_size, Image.Resampling.LANCZOS)
-        return image.copy()
+def api_load_image(args, photo):
+    if photo.get("page_unknown"):
+        raise RuntimeError("Tropy did not say which page of this file the photo is, so it was not guessed")
+    source_path = photo.get("source_path")
+    local = Path(str(source_path)) if source_path else None
+    key = str(local) if local else f"photo:{photo['photo_id']}"
+
+    def get_source():
+        if local is not None and local.is_file():
+            return local
+        return api_request(args, "GET", f"/photos/{photo['photo_id']}/raw").content
+
+    return load_page_image(
+        key, get_source, photo.get("mimetype"), photo.get("filename") or source_path, photo.get("page"), args.max_dimension
+    )
 
 
 def build_note_html(text):
@@ -1338,28 +1522,21 @@ def process_photo_api(photo, args):
         if txt_path.exists() and not args.overwrite:
             return {**base, "status": "skipped", "elapsed": time.time() - start}
     try:
-        image = api_load_image(args, photo["photo_id"])
+        image = api_load_image(args, photo)
+        repeated = False
         if args.engine == "tesseract":
             raw_text = call_tesseract(image, args.tesseract_lang, args.timeout)
             engine_label = f"tesseract {args.tesseract_version}:{args.tesseract_lang}"
         else:
-            raw_text = call_ollama(
-                args.ollama_host,
-                args.model,
-                PROMPTS[args.mode],
-                image_to_b64(image),
-                args.timeout,
-                args.retries,
-                args.max_tokens,
-                args.num_ctx,
-                args.repeat_penalty,
-                args.max_think_tokens,
-            )
+            raw_text, repeated = transcribe_with_vision(args, image, PROMPTS[args.mode])
             engine_label = args.model
         ocr_text = clean_ocr_text(raw_text)
         no_text = not ocr_text or is_no_text_response(ocr_text)
         if no_text:
             ocr_text = "[no text identified]"
+        if repeated:
+            no_text = False
+            ocr_text = REPEAT_NOTICE if ocr_text == "[no text identified]" else f"{ocr_text}\n\n{REPEAT_NOTICE}"
         final_text = finalize_note_text(ocr_text, engine_label)
     except ThinkingLimitError as error:
         return {**base, "status": "failed", "error": str(error), "thinking_abort": True, "elapsed": time.time() - start}
@@ -1371,6 +1548,7 @@ def process_photo_api(photo, args):
             "status": "dry-run",
             "chars": len(ocr_text),
             "no_text": no_text,
+            "repetition": repeated,
             "elapsed": time.time() - start,
             "text": ocr_text,
         }
@@ -1394,7 +1572,14 @@ def process_photo_api(photo, args):
             write_txt_file(txt_path, final_text, backup_existing=args.overwrite, keep=args.keep_backups)
     except Exception as error:
         return {**base, "status": "failed", "error": f"write failed: {error}", "elapsed": time.time() - start}
-    result = {**base, "status": "ok", "chars": len(ocr_text), "no_text": no_text, "elapsed": time.time() - start}
+    result = {
+        **base,
+        "status": "ok",
+        "chars": len(ocr_text),
+        "no_text": no_text,
+        "repetition": repeated,
+        "elapsed": time.time() - start,
+    }
     if not args.no_tag:
         already_failed = photo["item_id"] in TAG_STATE["failed"]
         try:
@@ -1428,7 +1613,7 @@ def run_api_mode(args):
     photos = apply_limit(photos, args)
     if args.preview:
         for photo in photos:
-            print(f"item {photo['item_id']:>6}  photo {photo['photo_id']:>6}  {photo['filename']}")
+            print(f"item {photo['item_id']:>6}  photo {photo['photo_id']:>6}  {photo.get('label') or photo['filename']}")
         print(f"{len(photos)} photo(s) matched")
         return
     lock_path = acquire_run_lock(args.api_url)
@@ -1437,6 +1622,7 @@ def run_api_mode(args):
     log_handle = open(args.log_file, "a", encoding="utf-8") if args.log_file else None
     counts = {}
     failed_ids = []
+    repeated_ids = []
     run_start = time.time()
     closed_message = ""
     try:
@@ -1473,7 +1659,7 @@ def run_api_mode(args):
             if not tropy_is_reachable(args):
                 closed_message = tropy_closed_message(index, len(photos))
                 break
-            update_status(current=f"photo {photo['photo_id']} {photo['filename']}")
+            update_status(current=f"photo {photo['photo_id']} {photo.get('label') or photo['filename']}")
             result = process_photo_api(photo, args)
             line = format_progress(index, len(photos), photo, result)
             print(line + timing_suffix(run_start, index, len(photos)))
@@ -1487,6 +1673,8 @@ def run_api_mode(args):
             counts[result["status"]] = counts.get(result["status"], 0) + 1
             if result["status"] == "failed":
                 failed_ids.append(photo["photo_id"])
+            if result.get("repetition"):
+                repeated_ids.append(photo["photo_id"])
             STATUS["recent"] = ([{"status": result["status"], "line": line}] + STATUS["recent"])[:10]
             update_status(
                 done=index,
@@ -1494,6 +1682,7 @@ def run_api_mode(args):
                 failed=counts.get("failed", 0),
                 skipped=counts.get("skipped", 0),
                 tag_errors=len(TAG_STATE["failed"]),
+                repetitions=len(repeated_ids),
             )
             emit_progress(
                 "photo",
@@ -1520,6 +1709,7 @@ def run_api_mode(args):
         elif STATUS["state"] != "stopped":
             update_status(state="finished", current="")
     finally:
+        release_document()
         if log_handle:
             log_handle.close()
         lock_path.unlink(missing_ok=True)
@@ -1531,6 +1721,8 @@ def run_api_mode(args):
         failed_ids=failed_ids,
         stopped=STOP_EVENT.is_set(),
         tag_errors=len(TAG_STATE["failed"]),
+        repeated=len(repeated_ids),
+        repeated_ids=repeated_ids,
         tropy_closed=bool(closed_message),
         message=closed_message,
     )
@@ -1540,6 +1732,11 @@ def run_api_mode(args):
     )
     if failed_ids:
         print("Failed photo ids:", ", ".join(str(i) for i in failed_ids))
+    if repeated_ids:
+        print(
+            f"Warning: the model began repeating itself on {len(repeated_ids)} photo(s); the output was cut "
+            "short and flagged in the note. Check photo id(s): " + ", ".join(str(i) for i in repeated_ids)
+        )
     if server:
         time.sleep(10 if closed_message else 3)
         server.shutdown()
@@ -1574,10 +1771,12 @@ def already_done_item_ids(conn, args, selected):
 
 
 def format_progress(index, total, photo, result):
-    base = f"[{index}/{total}] photo {photo['photo_id']} {photo['filename']} - {result['status']}"
+    base = f"[{index}/{total}] photo {photo['photo_id']} {photo.get('label') or photo['filename']} - {result['status']}"
     if result["status"] in ("ok", "dry-run"):
         suffix = " - no text identified" if result.get("no_text") else f" - {result['chars']} chars"
         warning = " - note saved but tag failed" if result.get("tag_error") else ""
+        if result.get("repetition"):
+            warning += " - MODEL REPEATED ITSELF: output cut, check this page"
         return f"{base}{suffix} - {result['elapsed']:.1f}s{warning}"
     if result["status"] == "failed":
         return f"{base} - {result['error']}"
@@ -1604,7 +1803,7 @@ def main(argv=None):
         photos = build_selection(conn, args)
         photos = apply_limit(photos, args)
         for photo in photos:
-            print(f"item {photo['item_id']:>6}  photo {photo['photo_id']:>6}  {photo['filename']}")
+            print(f"item {photo['item_id']:>6}  photo {photo['photo_id']:>6}  {photo.get('label') or photo['filename']}")
         print(f"{len(photos)} photo(s) matched")
         conn.close()
         return
@@ -1647,6 +1846,7 @@ def main(argv=None):
             conn.commit()
     counts = {}
     failed_ids = []
+    repeated_ids = []
     run_start = time.time()
     log_handle = open(args.log_file, "a", encoding="utf-8") if args.log_file else None
     try:
@@ -1665,6 +1865,8 @@ def main(argv=None):
             counts[result["status"]] = counts.get(result["status"], 0) + 1
             if result["status"] == "failed":
                 failed_ids.append(photo["photo_id"])
+            if result.get("repetition"):
+                repeated_ids.append(photo["photo_id"])
             if result.get("thinking_abort"):
                 print(
                     "Stopping: the model is spending its token budget thinking, and every "
@@ -1674,6 +1876,7 @@ def main(argv=None):
                 )
                 break
     finally:
+        release_document()
         if log_handle:
             log_handle.close()
         conn.close()
@@ -1683,6 +1886,11 @@ def main(argv=None):
     )
     if failed_ids:
         print("Failed photo ids:", ", ".join(str(i) for i in failed_ids))
+    if repeated_ids:
+        print(
+            f"Warning: the model began repeating itself on {len(repeated_ids)} photo(s); the output was cut "
+            "short and flagged in the note. Check photo id(s): " + ", ".join(str(i) for i in repeated_ids)
+        )
     if tag_failed_items:
         print(f"Warning: {len(tag_failed_items)} item(s) could not be tagged '{args.tag}' (the notes were saved).")
 

@@ -1,5 +1,5 @@
-# OCR Transcription for Tropy (version 0.2.10)
-Adds a **Start OCR** button to Tropy. Select items, press the button, and each photo is transcribed by a model running locally on your Mac. The text is saved as a Tropy note on the photo, and the item is tagged `ocr:auto`.
+# OCR Transcription for Tropy (version 0.3.1)
+Adds a **Start OCR** button to Tropy. Select items, press the button, and each photo is transcribed by a model running on locally on your own Mac. The text is saved as a Tropy note on the photo, and the item is tagged `ocr:auto`.
 
 **Requirements:** a Mac with an Apple Silicon chip (M1, M2, M3 or later; not an Intel Mac), and Tropy 1.17. A Mac with 16 GB of memory or more is recommended for the default model.
 
@@ -8,7 +8,7 @@ The code for this project was generated using Claude Code (Sonnet 5.5). This rea
 
 ## Disclaimer
 This plugin is an independent, unofficial tool. It is not affiliated with or
-endorsed by the Tropy project. It is released **as is and without warranty**.
+endorsed by the Tropy project. It is released **as is and without *warranty**.
 
 ## Benefits
 
@@ -36,21 +36,21 @@ endorsed by the Tropy project. It is released **as is and without warranty**.
 4. You can close Terminal.
 
 ### Step 3. Install the plugin in Tropy
-1. Download [`tropy-ocr-0.2.10.zip`](https://github.com/poskett/Tropy-OCR-Plugin/releases/tag/v0.2.10) from Release on this page.
+1. Download `tropy-ocr-0.3.1.zip` from Release on this page.
 2. Open Tropy.
 3. In the menu bar choose **Tropy > Settings > Plugins**
 4. Click "Install Plugin".
-5. Select `tropy-ocr-0.2.10.zip` and click 'Open'.
+5. Select `tropy-ocr-0.3.1.zip` and click 'Open'.
 6. The plugin 'OCR Transcription' should now appear.
 
 ### Step 4. Turn the plugin on
 1. In the same settings panel, click **Enable** under **OCR Transcription**.
-2. Click **Settings** and look through them. The defaults work for most people. The model name must match what you downloaded.
+2. Click **Settings** and look through them. The defaults work for most people. The model name must match what you downloaded in Step 2.
 
 ### Step 5. Turn on Tropy's API (required)
 1. In Tropy Preferences, open the **Settings** tab (it may be under Advanced).
 2. Scroll down to **Developer API** at the bottom.
-3. Switch Developer API **on**. Leave the port as 2019 unless you have a reason to change it.
+3. Switch **Developer API** on. Leave the port as 2019 unless you have a reason to change it.
 
 ### Step 6. Allow the plugin to run (only if macOS blocks it)
 If you see a message that the program "cannot be opened" or "is damaged", open Terminal and paste this (adjust the path if your plugins folder is elsewhere), then press Enter:
@@ -73,6 +73,8 @@ You are ready to start!
 Things to know:
 - The **whole of every selected item** is processed, which can take a long time for items with many photos. The **Stop** button on the progress page stops after the current photo.
 - The tag (default `ocr:auto`) is added to the **item**, not to individual photos, once its first note has been saved. Items that were already done in an earlier run are tagged too. The tag is created once and reused; to switch tagging off, tick "Do not tag processed items" in the settings.
+- **PDFs** (and multi-page TIFFs) work too: Tropy lists each page as its own photo, and each page gets its own note. Pages are rendered in memory only, so nothing extra is saved on disk. The PDF's own text layer is ignored; every page is read from its image.
+- If the model gets stuck repeating a page's text, OCR stops that page early, keeps the first pass, adds a visible "OCR stopped: the model began repeating itself" line to the note, and lists the photo at the end. Please check those pages.
 - Photos that already have an automated OCR note are skipped. To redo them, switch on "Replace earlier automated OCR notes" in the plugin settings.
 - If you close Tropy during a run, OCR stops. Open Tropy and press Start OCR again to carry on where it stopped.
 - Do not quit Ollama during a run.
@@ -102,3 +104,9 @@ You do not need Ollama or the model if you only use Tesseract.
 
 ## Uninstalling
 Tropy > Settings > Plugins > OCR Transcription > **Uninstall**. This does not remove notes already created. To remove Ollama, delete it from Applications.
+
+## For developers
+- The script is shared with the standalone tool: after editing `tropy_ocr.py` here, copy it over `../tropy-ocr/tropy_ocr.py` and run the tests there (`cd ../tropy-ocr && .venv/bin/python -m unittest discover -s tests`).
+- `tropy_ocr.py` is the source of the bundled program `bin/tropy_ocr`; rebuild with `./build_bundle.sh` (needs `../.venv` with the packages in the script's imports).
+- Command line use: `bin/tropy_ocr --api-url http://localhost:2019 --item 12 --preview`. The original `--project` mode (Tropy closed) still works.
+- To use your own Python instead of the bundled program, set "Python executable" in the settings.
