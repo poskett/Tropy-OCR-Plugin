@@ -45,12 +45,12 @@ endorsed by the Tropy project. It is released **as is and without warranty**.
 
 ### Step 4. Turn the plugin on
 1. In the same settings panel, click **Enable** under **OCR Transcription**.
-2. Click **Settings** and look through them. The defaults work for most people. The model name must match what you downloaded in Step 2.
+2. Click **Settings** and look through them. The defaults work for most people. The model name must match what you downloaded.
 
 ### Step 5. Turn on Tropy's API (required)
 1. In Tropy Preferences, open the **Settings** tab (it may be under Advanced).
 2. Scroll down to **Developer API** at the bottom.
-3. Switch **Developer API** on. Leave the port as 2019 unless you have a reason to change it.
+3. Switch Developer API **on**. Leave the port as 2019 unless you have a reason to change it.
 
 ### Step 6. Allow the plugin to run (only if macOS blocks it)
 If you see a message that the program "cannot be opened" or "is damaged", open Terminal and paste this (adjust the path if your plugins folder is elsewhere), then press Enter:
@@ -102,9 +102,3 @@ You do not need Ollama or the model if you only use Tesseract.
 
 ## Uninstalling
 Tropy > Settings > Plugins > OCR Transcription > **Uninstall**. This does not remove notes already created. To remove Ollama, delete it from Applications.
-
-## For developers
-- The script is shared with the standalone tool: after editing `tropy_ocr.py` here, copy it over `../tropy-ocr/tropy_ocr.py` and run the tests there (`cd ../tropy-ocr && .venv/bin/python -m unittest discover -s tests`).
-- `tropy_ocr.py` is the source of the bundled program `bin/tropy_ocr`; rebuild with `./build_bundle.sh` (needs `../.venv` with the packages in the script's imports).
-- Command line use: `bin/tropy_ocr --api-url http://localhost:2019 --item 12 --preview`. The original `--project` mode (Tropy closed) still works.
-- To use your own Python instead of the bundled program, set "Python executable" in the settings.
