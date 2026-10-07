@@ -2,7 +2,7 @@
 # Declaration: Code generated using Anthropic Claude (Sonnet 5.5)
 set -e
 cd "$(dirname "$0")"
-VENV="../.venv"
+VENV=".venv"
 "$VENV/bin/python" -m pip install --quiet pyinstaller
 rm -rf build dist
 "$VENV/bin/python" -m PyInstaller --onefile --collect-all pypdfium2 --collect-all pypdfium2_raw --name tropy_ocr --distpath dist --workpath build --specpath build tropy_ocr_plugin.py

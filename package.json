@@ -1,7 +1,7 @@
 {
   "name": "tropy-ocr",
   "productName": "OCR Transcription",
-  "version": "0.4.0",
+  "version": "0.5.1",
   "description": "Transcribe items or photos with a local Ollama vision model or Tesseract, writing Tropy notes while Tropy stays open. Bundled program for Apple Silicon Macs.",
   "main": "index.js",
   "icon": "icon.svg",
@@ -93,9 +93,15 @@
     },
     {
       "field": "maxDimension",
-      "label": "Longest image edge (pixels)",
+      "label": "Longest image edge (pixels, 0 = no limit)",
       "type": "number",
-      "default": 2000
+      "default": 3000
+    },
+    {
+      "field": "pdfDpi",
+      "label": "PDF render resolution (dpi)",
+      "type": "number",
+      "default": 200
     },
     {
       "field": "language",
@@ -138,6 +144,13 @@
       "label": "Repeat penalty",
       "type": "number",
       "default": 1.3
+    },
+    {
+      "field": "temperature",
+      "label": "Temperature",
+      "type": "number",
+      "default": 0.2,
+      "hint": "Vision engine only. Lower values give more literal transcriptions; higher values are more varied"
     },
     {
       "field": "logFile",
