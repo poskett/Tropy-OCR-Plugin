@@ -1,4 +1,4 @@
-# OCR Transcription for Tropy (version 0.4.0)
+# OCR Transcription for Tropy (version 0.5.1)
 Adds a **Start OCR** button to Tropy. Select items, press the button, and each photo is transcribed by a model running on locally on your own Mac. The text is saved as a Tropy note on the photo, and the item is tagged `ocr:auto`.
 
 **Requirements:** a Mac with an Apple Silicon chip (M1, M2, M3 or later; not an Intel Mac), and Tropy 1.17. A Mac with 16 GB of memory or more is recommended for the default model.
@@ -36,11 +36,11 @@ endorsed by the Tropy project. It is released **as is and without *warranty**.
 4. You can close Terminal.
 
 ### Step 3. Install the plugin in Tropy
-1. Download `tropy-ocr-0.4.0.zip` from Release on this page.
+1. Download `tropy-ocr-0.5.1.zip` from Release on this page.
 2. Open Tropy.
 3. In the menu bar choose **Tropy > Settings > Plugins**
 4. Click "Install Plugin".
-5. Select `tropy-ocr-0.4.0.zip` and click 'Open'.
+5. Select `tropy-ocr-0.5.1.zip` and click 'Open'.
 6. The plugin 'OCR Transcription' should now appear.
 
 ### Step 4. Turn the plugin on
@@ -75,6 +75,10 @@ Things to know:
 - The tag (default `ocr:auto`) is added to the **item**, not to individual photos, once its first note has been saved. Items that were already done in an earlier run are tagged too. The tag is created once and reused; to switch tagging off, tick "Do not tag processed items" in the settings.
 - **PDFs** (and multi-page TIFFs) work too: Tropy lists each page as its own photo, and each page gets its own note. Pages are rendered in memory only, so nothing extra is saved on disk. The PDF's own text layer is ignored; every page is read from its image.
 - If the model gets stuck repeating a page's text, OCR stops that page early, keeps the first pass, adds a visible "OCR stopped: the model began repeating itself" line to the note, and lists the photo at the end. Please check those pages.
+- If the model reaches its token limit before finishing a page, the note ends with "OCR stopped: hit the token limit - this page may be incomplete". Raise **Max tokens per photo** (and **Context window**) for very dense pages.
+- Some models "think" before answering (for example `gemma4`). The plugin detects these and switches thinking off, which is faster and stops them looping. `gemma4:26b-a4b-it-q4_K_M` works well if your Mac has the memory for it.
+- Images are sent to the model as PNG, shrunk so the longest edge is at most 3000 pixels (**Longest image edge**; 0 = no limit). Ollama shrinks images further itself, so larger values add nothing: gemma4 gains no detail above about 2000 pixels and qwen3-vl none above about 3000. PDF pages are rendered at 200 dpi (**PDF render resolution**).
+- **Temperature** (default 0.2) controls how adventurous the model is. Keep it low for faithful transcription.
 - Photos that already have an automated OCR note are skipped. To redo them, switch on "Replace earlier automated OCR notes" in the plugin settings.
 - If you close Tropy during a run, OCR stops. Open Tropy and press Start OCR again to carry on where it stopped.
 - Do not quit Ollama during a run.
@@ -100,6 +104,8 @@ You do not need Ollama or the model if you only use Tesseract.
 | No Start OCR button | Check the plugin is enabled (Step 4) and that you are in the main project window, not the photo viewer. |
 | "Nothing to do" | The photos already have an automated OCR note. Turn on "Replace earlier automated OCR notes" to redo them. |
 | A photo is listed as failed | See the progress page for the reason. Blank or very faint pages sometimes fail; the rest carry on. |
+| An error mentioning the context window | Raise **Context window** (e.g. 12288) or lower **Longest image edge** (e.g. 2000). |
+| Settings still show old values after updating | Tropy keeps settings you saved earlier. Change them by hand, or uninstall and reinstall the plugin to get the new defaults. |
 
 
 ## Uninstalling
@@ -107,6 +113,6 @@ Tropy > Settings > Plugins > OCR Transcription > **Uninstall**. This does not re
 
 ## For developers
 - `tropy_ocr_plugin.py` is a separate, API-only version of the standalone `../tropy-ocr/tropy_ocr.py` (no `--project` mode, no tag colour). Changes are not shared between them automatically.
-- `tropy_ocr_plugin.py` is the source of the bundled program `bin/tropy_ocr`; rebuild with `./build_bundle.sh` (needs `../.venv` with the packages in the script's imports).
+- `tropy_ocr_plugin.py` is the source of the bundled program `bin/tropy_ocr`; rebuild with `./build_bundle.sh`. It needs a `.venv` in this folder: `python3 -m venv .venv` then `.venv/bin/pip install -r requirements.txt`.
 - Command line use: `bin/tropy_ocr --api-url http://localhost:2019 --item 12 --preview`.
 - To use your own Python instead of the bundled program, set "Python executable" in the settings.

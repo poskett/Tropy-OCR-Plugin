@@ -27,6 +27,7 @@ DEFAULT_HOST = "http://localhost:11434"
 DEFAULT_TAG = "ocr:auto"
 DEFAULT_TESSERACT_LANG = "eng"
 DEFAULT_MAX_THINK_TOKENS = 1000
+DEFAULT_TEMPERATURE = 0.2
 
 MARKER_PREFIX = "[Automated OCR - model:"
 MARKER_RE = re.compile(re.escape(MARKER_PREFIX) + r".*?\]")
@@ -81,6 +82,8 @@ REPEAT_NOTICE = (
     "[OCR stopped: the model began repeating itself, so the rest of this page "
     "may be missing - please check this page]"
 )
+
+LENGTH_NOTICE = "[OCR stopped: hit the token limit - this page may be incomplete]"
 
 
 def find_repetition_cut(text):
@@ -183,8 +186,14 @@ def build_arg_parser():
     parser.add_argument(
         "--max-dimension",
         type=int,
-        default=2000,
-        help="Resize images so the longest edge is at most this many pixels",
+        default=3000,
+        help="Resize images so the longest edge is at most this many pixels (0 sends them at full size)",
+    )
+    parser.add_argument(
+        "--pdf-dpi",
+        type=int,
+        default=200,
+        help="Resolution at which PDF pages are rendered before OCR",
     )
     parser.add_argument("--log-file", help="Write a JSONL record for every processed photo to this path")
     parser.add_argument("--language", default="en", help="Language code stored on each note")
@@ -224,6 +233,12 @@ def build_arg_parser():
             "Penalty applied to already-generated tokens. Above 1.0 to stop the model "
             "looping on the same token on blank or badly damaged pages."
         ),
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=DEFAULT_TEMPERATURE,
+        help="Sampling temperature for the model (--engine vision only). Lower is more literal.",
     )
     return parser
 
@@ -277,6 +292,8 @@ def photo_label(photo):
 
 
 def fit_to_max_dimension(image, max_dimension):
+    if not max_dimension:
+        return image
     width, height = image.size
     longest = max(width, height)
     if longest > max_dimension:
@@ -311,24 +328,22 @@ def open_pdf(source):
         raise RuntimeError(f"could not open the PDF ({text})")
 
 
-def render_pdf_page(document, page, max_dimension):
+def render_pdf_page(document, page, pdf_dpi):
     total = len(document)
     if page < 0 or page >= total:
         raise RuntimeError(f"the PDF has {total} page(s) but page {page + 1} was requested")
     pdf_page = document[page]
     try:
-        width, height = pdf_page.get_size()
-        scale = max_dimension / float(max(width, height))
-        return pdf_page.render(scale=scale).to_pil().convert("RGB")
+        return pdf_page.render(scale=pdf_dpi / 72.0).to_pil().convert("RGB")
     finally:
         pdf_page.close()
 
 
-def load_page_image(key, get_source, mimetype, name, page, max_dimension):
+def load_page_image(key, get_source, mimetype, name, page, max_dimension, pdf_dpi):
     page = int(page or 0)
     if is_pdf(mimetype, name):
         document = hold_document(key, "pdf", lambda: open_pdf(get_source()))
-        return fit_to_max_dimension(render_pdf_page(document, page, max_dimension), max_dimension)
+        return fit_to_max_dimension(render_pdf_page(document, page, pdf_dpi), max_dimension)
     if is_tiff(mimetype, name) or page > 0:
         def open_image():
             source = get_source()
@@ -348,7 +363,7 @@ def load_page_image(key, get_source, mimetype, name, page, max_dimension):
 
 def image_to_b64(image):
     buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=90)
+    image.save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
@@ -412,28 +427,40 @@ def describe_ollama_error(error, server_detail):
         return (
             f"{error} - {server_detail} "
             f"(the image plus prompt used more tokens than the model's context "
-            f"window allows; try raising --num-ctx, or lowering --max-dimension "
-            f"or --max-tokens)"
+            f"window allows; try raising --num-ctx, setting --max-dimension "
+            f"(e.g. 2000), or lowering --max-tokens)"
         )
     if server_detail:
         return f"{error} - {server_detail}"
     return str(error)
 
 
-def call_ollama(host, model, prompt, image_b64, timeout, retries, max_tokens, num_ctx, repeat_penalty, max_think_tokens):
-    url = f"{host.rstrip('/')}/api/generate"
+def model_can_think(host, model):
+    url = f"{host.rstrip('/')}/api/show"
+    try:
+        response = requests.post(url, json={"model": model}, timeout=10)
+        response.raise_for_status()
+        capabilities = response.json().get("capabilities") or []
+    except (requests.RequestException, ValueError):
+        return False
+    return "thinking" in capabilities
+
+
+def call_ollama(host, model, prompt, image_b64, timeout, retries, max_tokens, num_ctx, repeat_penalty, max_think_tokens, temperature, disable_thinking):
+    url = f"{host.rstrip('/')}/api/chat"
     payload = {
         "model": model,
-        "prompt": prompt,
-        "images": [image_b64],
+        "messages": [{"role": "user", "content": prompt, "images": [image_b64]}],
         "stream": True,
         "options": {
-            "temperature": 0,
+            "temperature": temperature,
             "num_predict": max_tokens,
             "num_ctx": num_ctx,
             "repeat_penalty": repeat_penalty,
         },
     }
+    if disable_thinking:
+        payload["think"] = False
     last_error = None
     for attempt in range(retries + 1):
         try:
@@ -442,15 +469,17 @@ def call_ollama(host, model, prompt, image_b64, timeout, retries, max_tokens, nu
             parts = []
             thinking_chunks = 0
             since_check = 0
+            done_reason = None
             for line in response.iter_lines():
                 if not line:
                     continue
                 chunk = json.loads(line)
                 if chunk.get("error"):
                     raise RuntimeError(chunk["error"])
-                if chunk.get("response"):
-                    parts.append(chunk["response"])
-                    since_check += len(chunk["response"])
+                message = chunk.get("message") or {}
+                if message.get("content"):
+                    parts.append(message["content"])
+                    since_check += len(message["content"])
                     if since_check >= 200:
                         since_check = 0
                         so_far = "".join(parts)
@@ -458,7 +487,7 @@ def call_ollama(host, model, prompt, image_b64, timeout, retries, max_tokens, nu
                         if cut:
                             response.close()
                             raise RepetitionLoop(so_far[:cut].strip())
-                if chunk.get("thinking"):
+                if message.get("thinking"):
                     thinking_chunks += 1
                     if max_think_tokens and not parts and thinking_chunks > max_think_tokens:
                         response.close()
@@ -467,8 +496,9 @@ def call_ollama(host, model, prompt, image_b64, timeout, retries, max_tokens, nu
                             "transcript - try an -instruct version of the model"
                         )
                 if chunk.get("done"):
+                    done_reason = chunk.get("done_reason")
                     break
-            return "".join(parts).strip()
+            return "".join(parts).strip(), done_reason
         except (ThinkingLimitError, RepetitionLoop):
             raise
         except requests.HTTPError as error:
@@ -489,7 +519,7 @@ def call_ollama(host, model, prompt, image_b64, timeout, retries, max_tokens, nu
 
 def transcribe_with_vision(args, image, prompt):
     try:
-        raw_text = call_ollama(
+        raw_text, done_reason = call_ollama(
             args.ollama_host,
             args.model,
             prompt,
@@ -500,10 +530,12 @@ def transcribe_with_vision(args, image, prompt):
             args.num_ctx,
             args.repeat_penalty,
             args.max_think_tokens,
+            args.temperature,
+            args.disable_thinking,
         )
-        return raw_text, False
+        return raw_text, False, done_reason == "length"
     except RepetitionLoop as loop:
-        return loop.text, True
+        return loop.text, True, False
 
 
 def clean_ocr_text(raw_text):
@@ -978,7 +1010,7 @@ def api_load_image(args, photo):
         return api_request(args, "GET", f"/photos/{photo['photo_id']}/raw").content
 
     return load_page_image(
-        key, get_source, photo.get("mimetype"), photo.get("filename") or source_path, photo.get("page"), args.max_dimension
+        key, get_source, photo.get("mimetype"), photo.get("filename") or source_path, photo.get("page"), args.max_dimension, args.pdf_dpi
     )
 
 
@@ -1037,11 +1069,12 @@ def process_photo_api(photo, args):
     try:
         image = api_load_image(args, photo)
         repeated = False
+        truncated = False
         if args.engine == "tesseract":
             raw_text = call_tesseract(image, args.tesseract_lang, args.timeout)
             engine_label = f"tesseract {args.tesseract_version}:{args.tesseract_lang}"
         else:
-            raw_text, repeated = transcribe_with_vision(args, image, PROMPTS[args.mode])
+            raw_text, repeated, truncated = transcribe_with_vision(args, image, PROMPTS[args.mode])
             engine_label = args.model
         ocr_text = clean_ocr_text(raw_text)
         no_text = not ocr_text or is_no_text_response(ocr_text)
@@ -1050,6 +1083,8 @@ def process_photo_api(photo, args):
         if repeated:
             no_text = False
             ocr_text = REPEAT_NOTICE if ocr_text == "[no text identified]" else f"{ocr_text}\n\n{REPEAT_NOTICE}"
+        if truncated and not no_text:
+            ocr_text = f"{ocr_text}\n\n{LENGTH_NOTICE}"
         final_text = finalize_note_text(ocr_text, engine_label)
     except ThinkingLimitError as error:
         return {**base, "status": "failed", "error": str(error), "thinking_abort": True, "elapsed": time.time() - start}
@@ -1111,11 +1146,15 @@ def tropy_closed_message(index, total):
 
 def run_api_mode(args):
     check_api_reachable(args)
+    args.disable_thinking = False
     if args.engine == "tesseract":
         verify_tesseract_available(args.tesseract_lang)
         args.tesseract_version = str(pytesseract.get_tesseract_version())
     else:
         verify_model_available(args.ollama_host, args.model)
+        args.disable_thinking = model_can_think(args.ollama_host, args.model)
+        if args.disable_thinking:
+            print(f"{args.model} is a thinking model; thinking is switched off for OCR")
     try:
         photos = api_build_selection(args)
     except requests.RequestException as error:
